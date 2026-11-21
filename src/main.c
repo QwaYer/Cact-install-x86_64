@@ -56,8 +56,7 @@ static const char *slabel(char *buf, int n, int i, const char *name) {
 }
 
 static const char *localrepo_candidates[] = {
-    "/tmp/localrepo.tar.zst",   /* cgoct staged it into tmpfs at boot */
-    "/dev/localrepo",           /* GRUB module, served by the kernel */
+    "/dev/localrepo",           /* GRUB module, served in place by the kernel */
     "/localrepo.tar.zst",
     "/boot/localrepo.tar.zst",
     NULL
