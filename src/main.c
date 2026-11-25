@@ -48,9 +48,11 @@ static char g_boot_dir[256] = PAYLOAD_BOOT;
 static char g_grub_dir[256] = PAYLOAD_GRUB;
 
 #define FIRMREPO_WORK  "/tmp/cact-install-payload"
-#define FIRMREPO_TAR   "/tmp/cact-install-firmrepo.tar"
+#define FIRMREPO_ZST   "/tmp/cact-install-firmrepo.tar.zst"   /* device dump */
+#define FIRMREPO_TAR   "/tmp/cact-install-firmrepo.tar"       /* decompressed */
 #define GRUBREPO_WORK  "/tmp/cact-install-grub"
-#define GRUBREPO_TAR   "/tmp/cact-install-grubrepo.tar"
+#define GRUBREPO_ZST   "/tmp/cact-install-grubrepo.tar.zst"   /* device dump */
+#define GRUBREPO_TAR   "/tmp/cact-install-grubrepo.tar"       /* decompressed */
 
 /* Wizard position shown in the header. */
 #define CI_STEPS 10
@@ -116,8 +118,14 @@ static int payload_from_archive(void) {
     if (ci_mkdir_p(FIRMREPO_WORK) != 0)
         return 0;
 
+    /* zstd's CLI refuses a character device as a named input ("not a regular
+     * file"), so dump the node to a file first — ci_copy_file reads to EOF and
+     * handles a device that reports no size. */
+    if (ci_copy_file(arc, FIRMREPO_ZST) != 0)
+        return 0;
+
     char *zargv[] = { (char *)"zstd", (char *)"-d", (char *)"-f",
-                      (char *)arc, (char *)"-o", (char *)FIRMREPO_TAR, NULL };
+                      (char *)FIRMREPO_ZST, (char *)"-o", (char *)FIRMREPO_TAR, NULL };
     if (ci_exec(TOOL_ZSTD, zargv) != 0)
         return 0;
 
@@ -146,8 +154,12 @@ static int payload_grub_from_module(void) {
     if (ci_mkdir_p(GRUBREPO_WORK) != 0)
         return 0;
 
+    /* Same as above: zstd will not open the /dev node directly. */
+    if (ci_copy_file(arc, GRUBREPO_ZST) != 0)
+        return 0;
+
     char *zargv[] = { (char *)"zstd", (char *)"-d", (char *)"-f",
-                      (char *)arc, (char *)"-o", (char *)GRUBREPO_TAR, NULL };
+                      (char *)GRUBREPO_ZST, (char *)"-o", (char *)GRUBREPO_TAR, NULL };
     if (ci_exec(TOOL_ZSTD, zargv) != 0)
         return 0;
 
