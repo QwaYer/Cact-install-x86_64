@@ -40,12 +40,12 @@
 
 /* The installer media (boot/kernel.bin, grub/) is baked into cctkfs.img, so the
  * bundled path below is the normal case; g_boot_dir/g_grub_dir point at it, or
- * at a work dir firmextr filled from an older localrepo archive that still
+ * at a work dir firmextr filled from an older firmrepo archive that still
  * carried the media.  The image to install comes from /dev/cctkfs. */
 static char g_boot_dir[256] = PAYLOAD_BOOT;
 static char g_grub_dir[256] = PAYLOAD_GRUB;
 
-#define LOCALREPO_WORK  "/tmp/cact-install-payload"
+#define FIRMREPO_WORK  "/tmp/cact-install-payload"
 
 /* Wizard position shown in the header. */
 #define CI_STEPS 9
@@ -55,17 +55,17 @@ static const char *slabel(char *buf, int n, int i, const char *name) {
     return buf;
 }
 
-static const char *localrepo_candidates[] = {
-    "/dev/localrepo",           /* GRUB module, served in place by the kernel */
-    "/localrepo.tar.zst",
-    "/boot/localrepo.tar.zst",
+static const char *firmrepo_candidates[] = {
+    "/dev/firmrepo",           /* GRUB module, served in place by the kernel */
+    "/firmrepo.tar.zst",
+    "/boot/firmrepo.tar.zst",
     NULL
 };
 
-/* A candidate is only an archive if it carries bytes: an empty /dev/localrepo
+/* A candidate is only an archive if it carries bytes: an empty /dev/firmrepo
  * (a boot medium whose GRUB did not hand the module over) or a zero-length file
  * would otherwise be picked and streamed as an empty archive. */
-static int localrepo_has_data(const char *path) {
+static int firmrepo_has_data(const char *path) {
     struct stat st;
     if (stat(path, &st) != 0)
         return 0;
@@ -74,31 +74,31 @@ static int localrepo_has_data(const char *path) {
     return 1;
 }
 
-static const char *find_localrepo(void) {
-    for (int i = 0; localrepo_candidates[i]; i++)
-        if (localrepo_has_data(localrepo_candidates[i]))
-            return localrepo_candidates[i];
+static const char *find_firmrepo(void) {
+    for (int i = 0; firmrepo_candidates[i]; i++)
+        if (firmrepo_has_data(firmrepo_candidates[i]))
+            return firmrepo_candidates[i];
     return NULL;
 }
 
 /* Stream the installer media out of the archive (only that subtree) into a
  * work dir, for media built before the payload moved into cctkfs.img. */
 static int payload_from_archive(void) {
-    const char *arc = find_localrepo();
+    const char *arc = find_firmrepo();
     if (!arc)
         return 0;
     if (!ci_file_exists(TOOL_FIRMEXTR))
         return 0;
 
     char *argv[] = { (char *)"firmextr", (char *)"-f", (char *)arc,
-                     (char *)"-C", (char *)LOCALREPO_WORK,
+                     (char *)"-C", (char *)FIRMREPO_WORK,
                      (char *)"usr/lib/cact-install/", NULL };
     if (ci_exec(TOOL_FIRMEXTR, argv) != 0)
         return 0;
     snprintf(g_boot_dir, sizeof(g_boot_dir),
-             LOCALREPO_WORK "/usr/lib/cact-install/boot");
+             FIRMREPO_WORK "/usr/lib/cact-install/boot");
     snprintf(g_grub_dir, sizeof(g_grub_dir),
-             LOCALREPO_WORK "/usr/lib/cact-install/grub");
+             FIRMREPO_WORK "/usr/lib/cact-install/grub");
     return 1;
 }
 
@@ -205,7 +205,7 @@ static int locate_sources(char *kernel, char *img, int *media_mounted) {
     }
 
     /* Only when the bundle is absent: older media kept the payload in
-     * localrepo.tar.zst, which firmextr now streams in full (the subtree may
+     * firmrepo.tar.zst, which firmextr now streams in full (the subtree may
      * sit anywhere in the archive).  Doing this first would scan the whole
      * 500 MB archive on every install — and a stale staging copy under /tmp
      * would surface as a bogus "zstd: Data corruption detected" that has
@@ -266,15 +266,15 @@ static int format_part(const struct ci_lpart *p) {
  * Only the groups ticked in the firmware step are packed; when the user kept
  * every group the source is already the right archive and is copied verbatim
  * (exact bytes, no CPU). */
-static void deploy_localrepo(const struct wiz *w) {
-    const char *arc = find_localrepo();
+static void deploy_firmrepo(const struct wiz *w) {
+    const char *arc = find_firmrepo();
     if (!arc) {
         tui_tasks_set_text(ci_tui(), 3, "no archive on this medium");
         return;
     }
 
     char dst[300];
-    snprintf(dst, sizeof(dst), MNT_ROOT "/localrepo.tar.zst");
+    snprintf(dst, sizeof(dst), MNT_ROOT "/firmrepo.tar.zst");
 
     int any = 0, all = (w->fw_n > 0);
     for (int i = 0; i < w->fw_n; i++) {
@@ -670,7 +670,7 @@ static int step_sources(struct wiz *w) {
 
 static int step_firmware(struct wiz *w) {
     char label[64];
-    const char *arc = find_localrepo();
+    const char *arc = find_firmrepo();
 
     if (!arc) {
         static const char *l[] = {
@@ -896,7 +896,7 @@ static int step_deploy(struct wiz *w) {
     /* 4. the firmware selection, packed into the target's archive */
     if (!failed) {
         tui_tasks_set(ci_tui(), 3, TUI_TASK_RUN);
-        deploy_localrepo(w);
+        deploy_firmrepo(w);
         if (tui_tasks_state(ci_tui(), 3) != TUI_TASK_FAIL)
             tui_tasks_set(ci_tui(), 3, TUI_TASK_OK);
         else

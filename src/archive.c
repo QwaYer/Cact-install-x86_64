@@ -1,5 +1,5 @@
 /*
- * archive.c — read, list and re-pack localrepo.tar.zst.
+ * archive.c — read, list and re-pack firmrepo.tar.zst.
  *
  * The archive the boot medium hands over is the whole firmware mirror (~500
  * MB packed).  The live session uses it as-is, but the target should not carry

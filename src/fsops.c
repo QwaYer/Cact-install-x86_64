@@ -93,7 +93,7 @@ int ci_copy_file(const char *src, const char *dst) {
         return -1;
     }
     /* Read to EOF, not to st.st_size: a source that cannot report its size — a
-     * device such as /dev/localrepo — reports 0, and a size-driven loop would
+     * device such as /dev/firmrepo — reports 0, and a size-driven loop would
      * copy nothing while returning success, leaving an empty destination. */
     char buf[4096];
     uint32_t total = 0;
