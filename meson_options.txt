@@ -14,4 +14,4 @@ option('zstd_dir', type: 'string', value: '../CactKernel-x86_64/Cact/drivers/zst
   description: 'vendored zstd sources shared with the kernel tree; archive.c links them (the linker drops them while nothing calls it)')
 
 option('grub_repo', type: 'string', value: '../grubrepo',
-  description: 'grubrepo: GRUB menus + make-grub-payload.sh used by grub-bundle, relative or absolute')
+  description: 'grubrepo: menu template + gen-cfg-header.py used to build the installer menu, relative or absolute')
