@@ -76,13 +76,37 @@ static int read_file_all(const char *path, char **out, uint32_t *outlen) {
     return 0;
 }
 
-int ci_grub_cfg_write(const char *root_mnt) {
+/* Write the boot menu: GRUB_CFG (grubrepo's menu-installed.cfg) with `modules`
+ * — the `module2` lines for the archives copied to /boot — spliced in right
+ * after the localbinrepo module line.  With no modules the template is written
+ * verbatim, so the default menu (localbinrepo only) is unchanged. */
+static int cfg_write(const char *path, const char *modules) {
+    const char *anchor = "/boot/localbinrepo.img localbinrepo\n";
+    const char *p = strstr(GRUB_CFG, anchor);
+    if (!p || !modules || !*modules)
+        return ci_write_file(path, GRUB_CFG, (uint32_t)strlen(GRUB_CFG)) == 0 ? 0 : -1;
+
+    uint32_t cut = (uint32_t)(p - GRUB_CFG) + (uint32_t)strlen(anchor);
+    size_t mlen = strlen(modules);
+    size_t total = strlen(GRUB_CFG) + mlen;
+    char *buf = malloc(total + 1);
+    if (!buf)
+        return -1;
+    memcpy(buf, GRUB_CFG, cut);
+    memcpy(buf + cut, modules, mlen);
+    memcpy(buf + cut + mlen, GRUB_CFG + cut, strlen(GRUB_CFG) - cut + 1);
+    int rc = ci_write_file(path, buf, (uint32_t)total) == 0 ? 0 : -1;
+    free(buf);
+    return rc;
+}
+
+int ci_grub_cfg_write(const char *root_mnt, const char *modules) {
     char path[300];
     snprintf(path, sizeof(path), "%s/boot/grub", root_mnt);
     if (ci_mkdir_p(path) != 0)
         return -1;
     snprintf(path, sizeof(path), "%s/boot/grub/grub.cfg", root_mnt);
-    return ci_write_file(path, GRUB_CFG, (uint32_t)strlen(GRUB_CFG)) == 0 ? 0 : -1;
+    return cfg_write(path, modules);
 }
 
 /*
@@ -91,7 +115,7 @@ int ci_grub_cfg_write(const char *root_mnt) {
  * Returns 0 on success, -1 when a file could not be staged.
  */
 int ci_deploy_grub_files(const struct ci_plan *plan, const char *root_mnt,
-                         const char *payload_grub) {
+                         const char *payload_grub, const char *modules) {
     char src[300], dst[300];
 
     if (plan->scheme == SCHEME_GPT_EFI) {
@@ -107,7 +131,7 @@ int ci_deploy_grub_files(const struct ci_plan *plan, const char *root_mnt,
         if (ci_copy_file(payload, dst) != 0)
             return -1;
         snprintf(dst, sizeof(dst), "%s/grub.cfg", dir);
-        if (ci_write_file(dst, GRUB_CFG, (uint32_t)strlen(GRUB_CFG)) != 0)
+        if (cfg_write(dst, modules) != 0)
             return -1;
         return 0;
     }

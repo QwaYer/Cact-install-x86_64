@@ -184,8 +184,9 @@ int ci_grub_install(const struct ci_disk *d, const struct ci_plan *plan,
 /* 0 on success, -1 if the loader files could not be staged.  These helpers do
  * not print: the deploy screen owns the display. */
 int ci_deploy_grub_files(const struct ci_plan *plan, const char *root_mnt,
-                         const char *payload_grub);
-/* 0 on success, -1 when grub.cfg could not be written. */
-int ci_grub_cfg_write(const char *root_mnt);
+                         const char *payload_grub, const char *modules);
+/* 0 on success, -1 when grub.cfg could not be written.  `modules` is the block
+ * of `module2` lines for the boot archives copied to /boot ("" for none). */
+int ci_grub_cfg_write(const char *root_mnt, const char *modules);
 
 #endif

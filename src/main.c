@@ -36,19 +36,22 @@
 #define TOOL_MKFS_EXT4  "/usr/sbin/mkfs.ext4"
 #define TOOL_MKFS_FAT32 "/usr/sbin/mkfs.fat32"
 #define TOOL_ROOTFS     "/usr/sbin/cact-rootfs"
-#define TOOL_FIRMEXTR   "/usr/bin/firmextr"
+#define TOOL_ZSTD       "/usr/bin/zstd"
+#define TOOL_TAR        "/usr/bin/tar"
 
 /* The installer media (boot/kernel.bin, grub/) is baked into localbinrepo.img, so the
  * bundled path below is the normal case; g_boot_dir/g_grub_dir point at it, or
- * at a work dir firmextr filled from an older firmrepo archive that still
- * carried the media.  The image to install comes from /dev/localbinrepo. */
+ * at a work dir the archive was streamed into for media built before the
+ * payload moved into localbinrepo.img.  The image to install comes from
+ * /dev/localbinrepo. */
 static char g_boot_dir[256] = PAYLOAD_BOOT;
 static char g_grub_dir[256] = PAYLOAD_GRUB;
 
 #define FIRMREPO_WORK  "/tmp/cact-install-payload"
+#define FIRMREPO_TAR   "/tmp/cact-install-firmrepo.tar"
 
 /* Wizard position shown in the header. */
-#define CI_STEPS 9
+#define CI_STEPS 10
 
 static const char *slabel(char *buf, int n, int i, const char *name) {
     snprintf(buf, n, "%s   [%d/%d]", name, i, CI_STEPS);
@@ -82,19 +85,29 @@ static const char *find_firmrepo(void) {
 }
 
 /* Stream the installer media out of the archive (only that subtree) into a
- * work dir, for media built before the payload moved into localbinrepo.img. */
+ * work dir, for media built before the payload moved into localbinrepo.img.
+ * zstd unwraps the frame, tar extracts just usr/lib/cact-install/ — the same
+ * tools the shell uses, so there is no installer-only extractor. */
 static int payload_from_archive(void) {
     const char *arc = find_firmrepo();
     if (!arc)
         return 0;
-    if (!ci_file_exists(TOOL_FIRMEXTR))
+    if (!ci_file_exists(TOOL_ZSTD) || !ci_file_exists(TOOL_TAR))
+        return 0;
+    if (ci_mkdir_p(FIRMREPO_WORK) != 0)
         return 0;
 
-    char *argv[] = { (char *)"firmextr", (char *)"-f", (char *)arc,
-                     (char *)"-C", (char *)FIRMREPO_WORK,
-                     (char *)"usr/lib/cact-install/", NULL };
-    if (ci_exec(TOOL_FIRMEXTR, argv) != 0)
+    char *zargv[] = { (char *)"zstd", (char *)"-d", (char *)"-f",
+                      (char *)arc, (char *)"-o", (char *)FIRMREPO_TAR, NULL };
+    if (ci_exec(TOOL_ZSTD, zargv) != 0)
         return 0;
+
+    char *targv[] = { (char *)"tar", (char *)"-xf", (char *)FIRMREPO_TAR,
+                      (char *)"-C", (char *)FIRMREPO_WORK,
+                      (char *)"usr/lib/cact-install/", NULL };
+    if (ci_exec(TOOL_TAR, targv) != 0)
+        return 0;
+
     snprintf(g_boot_dir, sizeof(g_boot_dir),
              FIRMREPO_WORK "/usr/lib/cact-install/boot");
     snprintf(g_grub_dir, sizeof(g_grub_dir),
@@ -123,7 +136,44 @@ struct wiz {
     struct ci_fw_group fw[CI_FW_MAX_GROUPS];
     int                fw_n;
     int                fw_total_selected;
+
+    /* Boot modules to carry to the target /boot: one flag per entry of
+     * boot_mods[] below.  localbinrepo (the boot image) is always deployed and
+     * is not part of the choice. */
+    unsigned char      mods[3];
+    unsigned char      mods_ready;
 };
+
+/* The optional boot modules the installer can copy to the target, so an
+ * installed system boots with the same archives as the medium.  Each is served
+ * in place by the kernel as a /dev node until it is written out. */
+struct boot_mod {
+    const char *dev;       /* /dev node, served in place by the kernel */
+    const char *file;      /* name under the target's /boot */
+    const char *cmdline;   /* GRUB `module2` argument */
+    const char *label;
+};
+
+static const struct boot_mod boot_mods[3] = {
+    { "/dev/firmrepo",   "firmrepo.tar.zst",   "firmrepo",
+      "Firmware mirror        firmrepo.tar.zst" },
+    { "/dev/netdrvrepo", "netdrvrepo.tar.zst", "netdrvrepo",
+      "Network driver modules netdrvrepo.tar.zst" },
+    { "/dev/drvrepo",    "drvrepo.tar.zst",    "drvrepo",
+      "Other driver modules   drvrepo.tar.zst" },
+};
+
+/* The `module2` lines for the selected modules, in boot_mods[] order. */
+static void mods_grub_lines(const struct wiz *w, char *out, size_t cap) {
+    out[0] = '\0';
+    for (int i = 0; i < 3; i++) {
+        if (!w->mods[i]) continue;
+        char line[96];
+        snprintf(line, sizeof(line), "    module2 /boot/%s %s\n",
+                 boot_mods[i].file, boot_mods[i].cmdline);
+        strncat(out, line, cap - strlen(out) - 1);
+    }
+}
 
 static int tool_ok(const char *path) {
     return ci_file_exists(path);
@@ -205,7 +255,7 @@ static int locate_sources(char *kernel, char *img, int *media_mounted) {
     }
 
     /* Only when the bundle is absent: older media kept the payload in
-     * firmrepo.tar.zst, which firmextr now streams in full (the subtree may
+     * firmrepo.tar.zst, which zstd+tar now stream in full (the subtree may
      * sit anywhere in the archive).  Doing this first would scan the whole
      * 500 MB archive on every install — and a stale staging copy under /tmp
      * would surface as a bogus "zstd: Data corruption detected" that has
@@ -261,7 +311,7 @@ static int format_part(const struct ci_lpart *p) {
 }
 
 /* Put a firmware archive at the target's root: the boot flow copies it to /tmp
- * and firmextr streams firmware out of it on demand.
+ * and zstd streams firmware out of it on demand.
  *
  * Only the groups ticked in the firmware step are packed; when the user kept
  * every group the source is already the right archive and is copied verbatim
@@ -675,7 +725,7 @@ static int step_firmware(struct wiz *w) {
     if (!arc) {
         static const char *l[] = {
             "No firmware archive was found on this medium, so the target",
-            "gets none. Firmware can be added later with cactpkg/firmextr.",
+            "gets none. Firmware can be added later with cactpkg and zstd.",
         };
         tui_notice(ci_tui(), "Firmware",
                    slabel(label, sizeof(label), 8, "Firmware"),
@@ -779,13 +829,60 @@ static int step_firmware(struct wiz *w) {
     return W_NEXT;
 }
 
+/* ── boot modules ─────────────────────────────────────────────────────── */
+
+static int step_modules(struct wiz *w) {
+    char label[64];
+    static const char *items[3];
+    static unsigned char sep[3];
+    static unsigned char on[3];
+    int present_n = 0;
+
+    for (int i = 0; i < 3; i++) {
+        struct stat st;
+        int present = (stat(boot_mods[i].dev, &st) == 0 && st.st_size > 0);
+        if (!w->mods_ready)
+            w->mods[i] = present ? 1 : 0;    /* preselect what the medium has */
+        items[i] = boot_mods[i].label;
+        sep[i] = 0;
+        on[i] = w->mods[i];
+        if (present)
+            present_n++;
+    }
+    w->mods_ready = 1;
+
+    if (present_n == 0) {
+        static const char *l[] = {
+            "This medium carries no extra boot modules, so the target gets",
+            "only the localbinrepo image.  Modules can be added later by",
+            "copying them from /dev/firmrepo, /dev/netdrvrepo or /dev/drvrepo.",
+        };
+        tui_notice(ci_tui(), "Boot modules",
+                   slabel(label, sizeof(label), 9, "Modules"),
+                   NULL, "Enter continue", l, 3);
+        return W_NEXT;
+    }
+
+    if (tui_checklist(ci_tui(), "Choose the boot modules to install",
+                      slabel(label, sizeof(label), 9, "Modules"),
+                      "Selected modules are copied to the target's /boot and "
+                      "listed in its GRUB menu.",
+                      "Up/Down move  Space toggle  a all  n none  r reset  Enter ok",
+                      items, sep, on, 3) != 0)
+        return W_BACK;
+
+    for (int i = 0; i < 3; i++)
+        w->mods[i] = on[i];
+    return W_NEXT;
+}
+
 /* ── system ───────────────────────────────────────────────────────────── */
 
 static int step_system(struct wiz *w) {
     char label[64];
     char buf[64];
     snprintf(buf, sizeof(buf), "%s", w->hostname[0] ? w->hostname : "cactos");
-    if (tui_input(ci_tui(), "System", slabel(label, sizeof(label), 9, "System"),
+    if (tui_input(ci_tui(), "System", slabel(label, sizeof(label), 10, "System"),
                   "Hostname:", buf, sizeof(buf)) != 0)
         return W_BACK;
     if (!buf[0])
@@ -817,6 +914,17 @@ static int step_summary(struct wiz *w) {
     else
         snprintf(lines[n++], 120, "Firmware    none (no archive on the medium)");
     snprintf(lines[n++], 120, "Hostname    %s", w->hostname);
+    {
+        char m[80];
+        m[0] = '\0';
+        for (int i = 0; i < 3; i++)
+            if (w->mods[i]) {
+                strncat(m, boot_mods[i].cmdline, sizeof(m) - strlen(m) - 2);
+                strncat(m, " ", sizeof(m) - strlen(m) - 1);
+            }
+        snprintf(lines[n++], 120, "Boot mods   %s",
+                 m[0] ? m : "localbinrepo only");
+    }
     snprintf(lines[n++], 120, "Media       %s", w->img_src);
 
     for (int i = 0; i < n; i++)
@@ -839,12 +947,15 @@ static int step_deploy(struct wiz *w) {
         "Bootloader files",
         "Bootloader in the MBR",
         "Firmware archive",
+        "Boot modules",
     };
     int ef = (w->plan.scheme == SCHEME_GPT_EFI);
     int failed = 0;
+    char mods[512];
+    mods_grub_lines(w, mods, sizeof(mods));
 
     tui_tasks_begin(ci_tui(), "Installing", "Install   [final]",
-                    "writing to the target disk", names, 4);
+                    "writing to the target disk", names, 5);
 
     /* 1. the root skeleton, kernel and image */
     tui_tasks_set(ci_tui(), 0, TUI_TASK_RUN);
@@ -867,8 +978,8 @@ static int step_deploy(struct wiz *w) {
     /* 2. grub.cfg and the bootloader files */
     if (!failed) {
         tui_tasks_set(ci_tui(), 1, TUI_TASK_RUN);
-        if (ci_grub_cfg_write(MNT_ROOT) != 0 ||
-            ci_deploy_grub_files(&w->plan, MNT_ROOT, g_grub_dir) != 0) {
+        if (ci_grub_cfg_write(MNT_ROOT, mods) != 0 ||
+            ci_deploy_grub_files(&w->plan, MNT_ROOT, g_grub_dir, mods) != 0) {
             tui_tasks_set_text(ci_tui(), 1, "not staged");
             tui_tasks_set(ci_tui(), 1, TUI_TASK_FAIL);
         } else {
@@ -901,6 +1012,35 @@ static int step_deploy(struct wiz *w) {
             tui_tasks_set(ci_tui(), 3, TUI_TASK_OK);
         else
             failed = 1;
+    }
+
+    /* 5. the selected boot modules, streamed from their /dev nodes */
+    if (!failed) {
+        tui_tasks_set(ci_tui(), 4, TUI_TASK_RUN);
+        int got = 0, want = 0, bad = 0;
+        for (int i = 0; i < 3; i++) {
+            if (!w->mods[i]) continue;
+            want++;
+            char dst[300];
+            snprintf(dst, sizeof(dst), "%s/boot/%s", MNT_ROOT, boot_mods[i].file);
+            if (ci_copy_file(boot_mods[i].dev, dst) == 0)
+                got++;
+            else
+                bad = 1;
+        }
+        if (bad) {
+            tui_tasks_set_text(ci_tui(), 4, "some modules were not copied");
+            tui_tasks_set(ci_tui(), 4, TUI_TASK_FAIL);
+            failed = 1;
+        } else if (want == 0) {
+            tui_tasks_set_text(ci_tui(), 4, "none selected");
+            tui_tasks_set(ci_tui(), 4, TUI_TASK_OK);
+        } else {
+            char t[48];
+            snprintf(t, sizeof(t), "%d module(s)", got);
+            tui_tasks_set_text(ci_tui(), 4, t);
+            tui_tasks_set(ci_tui(), 4, TUI_TASK_OK);
+        }
     }
 
     /* configuration files last: they need the root mounted and deployed */
@@ -956,6 +1096,7 @@ enum {
     ST_MOUNT,
     ST_SOURCES,
     ST_FIRMWARE,
+    ST_MODULES,
     ST_SYSTEM,
     ST_SUMMARY,
     ST_DEPLOY,
@@ -966,9 +1107,9 @@ static void welcome(void) {
     static const char *l[] = {
         "This wizard installs CactOS onto a disk.",
         "",
-        "You will choose a disk and a partition scheme, pick the firmware",
-        "that should travel to the target, and confirm a summary. Nothing is",
-        "written until that confirmation.",
+        "You will choose a disk and a partition scheme, pick the firmware and",
+        "the boot modules that should travel to the target, and confirm a",
+        "summary. Nothing is written until that confirmation.",
         "",
         "Up/Down and PgUp/PgDn move, Enter selects, Left goes back.",
     };
@@ -1010,6 +1151,7 @@ int main(int argc, char **argv, char **envp) {
         case ST_MOUNT:    r = step_mount(&w);   break;
         case ST_SOURCES:  r = step_sources(&w); break;
         case ST_FIRMWARE: r = step_firmware(&w);break;
+        case ST_MODULES:  r = step_modules(&w); break;
         case ST_SYSTEM:   r = step_system(&w);  break;
         case ST_SUMMARY:  r = step_summary(&w); break;
         case ST_DEPLOY:   r = step_deploy(&w);  break;
