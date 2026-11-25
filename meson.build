@@ -26,6 +26,7 @@ project('cact-install', 'c',
 fs = import('fs')
 bash = find_program('bash')
 ld = find_program('ld')
+python3 = find_program('python3')
 
 src_root = meson.project_source_root()
 build_root = meson.current_build_dir()
@@ -41,6 +42,15 @@ _kern_build = get_option('kern_build')
 kern_build = _kern_build.startswith('/') ? _kern_build : src_root / _kern_build
 _zstd = get_option('zstd_dir')
 zstd_dir = _zstd.startswith('/') ? _zstd : src_root / _zstd
+_grub = get_option('grub_repo')
+grub_root = _grub.startswith('/') ? _grub : src_root / _grub
+
+# The grub.cfg the installer writes onto the target disk is generated from
+# grubrepo's menu template (no second copy of the menu in C).
+grub_cfg_h = custom_target('grub_cfg.h',
+  output: 'grub_cfg.h',
+  command: [python3, grub_root / 'tools' / 'gen-cfg-header.py',
+            grub_root / 'menus' / 'menu-installed.cfg', 'GRUB_CFG', '@OUTPUT@'])
 
 start_o = cactlib / 'build-meson' / 'start.o'
 clibc_so = cactlib / 'build-meson' / 'clibc.so'
@@ -77,6 +87,7 @@ installer_lib = static_library('cact-install',
     'src/tui_wire.c',
     'src/ui.c',
   ),
+  grub_cfg_h,
   c_args: c_args)
 
 # archive.c can re-pack an archive, so the installer links the zstd vendored in
@@ -128,11 +139,11 @@ run_target('stage',
   command: [bash, '-c', 'set -e; mkdir -p "$1"; cp -f "$2" "$1/cact-install"',
             'bash', lr_sbin, installer])
 
-# The Makefile's `grub-bundle`: GRUB stage files built by the host tool.
+# The Makefile's `grub-bundle`: GRUB stage files built from grubrepo.
 grub_payload = build_root / 'grub'
 
 run_target('grub-bundle',
-  command: [bash, src_root / 'tools/make-grub-payload.sh', grub_payload])
+  command: [bash, grub_root / 'tools' / 'make-grub-payload.sh', grub_payload])
 
 # The Makefile's `stage-media`: kernel + grub payload into -Dlr_lib, so the next
 # localbinrepo.img pack carries them.  The image itself is deliberately NOT copied: the

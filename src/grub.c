@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <stat.h>
 
+/* Generated at build time from grubrepo/menus/menu-installed.cfg. */
+#include "grub_cfg.h"
+
 #define GRUB_KERNEL_SECTOR_OFF  0x5c
 #define GRUB_DISKBOOT_LIST_OFF  0x1f4
 #define GRUB_MASTER_BOOT_RECORD 0x1b8
@@ -40,16 +43,6 @@ static const char *BIOS_MOD_FILES[] = {
     "biosdisk.mod",
     NULL,
 };
-
-static const char *GRUB_CFG =
-    "set timeout=5\n"
-    "set default=0\n"
-    "menuentry \"CactOS\" {\n"
-    "    search --no-floppy --set=root --file /boot/localbinrepo.img\n"
-    "    multiboot2 /boot/kernel.bin\n"
-    "    module2 /boot/localbinrepo.img localbinrepo\n"
-    "    boot\n"
-    "}\n";
 
 static int read_file_all(const char *path, char **out, uint32_t *outlen) {
     int fd = open(path, O_RDONLY);
