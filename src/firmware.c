@@ -133,7 +133,7 @@ static int fw_prefix_ci(const char *name, const char *prefix);   /* below */
 
 /* Loaded driver modules are the second signal: a group named like a module
  * that is actually loaded belongs to hardware this machine has, even when the
- * driver never asked for firmware (or got it from cctkfs).  Names under three
+ * driver never asked for firmware (or got it from localbinrepo).  Names under three
  * characters are skipped — too easy to match by accident. */
 static int fw_modules_mark(struct ci_fw_group *groups, int n) {
     size_t len = 0;

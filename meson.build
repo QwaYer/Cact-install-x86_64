@@ -7,7 +7,7 @@
 #   ninja -C build-meson             # build-meson/cact-install
 #   ninja -C build-meson stage        # copy into -Dlr_sbin (make install)
 #   ninja -C build-meson grub-bundle  # GRUB stage files into build-meson/grub
-#   ninja -C build-meson stage-media  # kernel + grub into -Dlr_lib (cctkfs.img)
+#   ninja -C build-meson stage-media  # kernel + grub into -Dlr_lib (localbinrepo.img)
 #
 # A PIE linked against CactLibc with /lib/ld.so as PT_INTERP, exactly as the
 # Makefile built it.  stage-media must run after the kernel is built and BEFORE
@@ -135,8 +135,8 @@ run_target('grub-bundle',
   command: [bash, src_root / 'tools/make-grub-payload.sh', grub_payload])
 
 # The Makefile's `stage-media`: kernel + grub payload into -Dlr_lib, so the next
-# cctkfs.img pack carries them.  The image itself is deliberately NOT copied: the
-# kernel serves the boot module as /dev/cctkfs and the installer reads it there
+# localbinrepo.img pack carries them.  The image itself is deliberately NOT copied: the
+# kernel serves the boot module as /dev/localbinrepo and the installer reads it there
 # (a copy inside the image would nest the image inside itself, and grow with
 # every rebuild).
 run_target('stage-media',

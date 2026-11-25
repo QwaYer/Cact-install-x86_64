@@ -45,9 +45,9 @@ static const char *GRUB_CFG =
     "set timeout=5\n"
     "set default=0\n"
     "menuentry \"CactOS\" {\n"
-    "    search --no-floppy --set=root --file /boot/cctkfs.img\n"
+    "    search --no-floppy --set=root --file /boot/localbinrepo.img\n"
     "    multiboot2 /boot/kernel.bin\n"
-    "    module2 /boot/cctkfs.img cctkfs\n"
+    "    module2 /boot/localbinrepo.img localbinrepo\n"
     "    boot\n"
     "}\n";
 

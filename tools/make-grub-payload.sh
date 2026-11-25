@@ -3,12 +3,12 @@
 #
 # Produces, under OUT_DIR:
 #   i386-pc/boot.img                 GRUB MBR stage1
-#   i386-pc/core.img                 BIOS core (searches /boot/cctkfs.img)
+#   i386-pc/core.img                 BIOS core (searches /boot/localbinrepo.img)
 #   i386-pc/*.mod                    trimmed BIOS module set for /boot/grub/i386-pc
 #   i386-efi/bootia32.efi            i386 EFI core (all modules embedded)
 #
 # The BIOS core is self-locating: an embedded config finds the partition that
-# carries /boot/cctkfs.img, sets root and prefix to ($root)/boot/grub, then
+# carries /boot/localbinrepo.img, sets root and prefix to ($root)/boot/grub, then
 # normal loads /boot/grub/grub.cfg from there (modules from /boot/grub/i386-pc).
 # The EFI core is compiled with prefix /EFI/BOOT and reads /EFI/BOOT/grub.cfg
 # from the ESP that firmware booted; all needed modules are embedded.
@@ -41,7 +41,7 @@ if ! command -v "${MKIMAGE}" >/dev/null 2>&1; then
 fi
 
 cat > "${OUT_DIR}/embed-bios.cfg" <<'EOF'
-search --no-floppy --set=root --file /boot/cctkfs.img
+search --no-floppy --set=root --file /boot/localbinrepo.img
 set prefix=($root)/boot/grub
 EOF
 

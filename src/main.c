@@ -25,12 +25,12 @@
 #define PAYLOAD_BOOT    "/usr/lib/cact-install/boot"
 #define PAYLOAD_GRUB    "/usr/lib/cact-install/grub"
 
-/* The boot cctkfs module, served in place by the kernel.  It publishes its size
+/* The boot localbinrepo module, served in place by the kernel.  It publishes its size
  * (0 = this medium carried no module), so it is the one image guaranteed to
  * match the system the installer is running on — which is why the media bundle
  * does not carry a copy of it: a copy would be a stale image, and packing it
- * into cctkfs.img would nest the image inside itself. */
-#define IMAGE_DEV       "/dev/cctkfs"
+ * into localbinrepo.img would nest the image inside itself. */
+#define IMAGE_DEV       "/dev/localbinrepo"
 
 #define TOOL_FDISK      "/usr/sbin/fdisk"
 #define TOOL_MKFS_EXT4  "/usr/sbin/mkfs.ext4"
@@ -38,10 +38,10 @@
 #define TOOL_ROOTFS     "/usr/sbin/cact-rootfs"
 #define TOOL_FIRMEXTR   "/usr/bin/firmextr"
 
-/* The installer media (boot/kernel.bin, grub/) is baked into cctkfs.img, so the
+/* The installer media (boot/kernel.bin, grub/) is baked into localbinrepo.img, so the
  * bundled path below is the normal case; g_boot_dir/g_grub_dir point at it, or
  * at a work dir firmextr filled from an older firmrepo archive that still
- * carried the media.  The image to install comes from /dev/cctkfs. */
+ * carried the media.  The image to install comes from /dev/localbinrepo. */
 static char g_boot_dir[256] = PAYLOAD_BOOT;
 static char g_grub_dir[256] = PAYLOAD_GRUB;
 
@@ -82,7 +82,7 @@ static const char *find_firmrepo(void) {
 }
 
 /* Stream the installer media out of the archive (only that subtree) into a
- * work dir, for media built before the payload moved into cctkfs.img. */
+ * work dir, for media built before the payload moved into localbinrepo.img. */
 static int payload_from_archive(void) {
     const char *arc = find_firmrepo();
     if (!arc)
@@ -155,7 +155,7 @@ static const char *find_boot_image(void) {
     struct stat st;
     if (stat(IMAGE_DEV, &st) == 0 && st.st_size > 0)
         return IMAGE_DEV;
-    snprintf(bundled, sizeof(bundled), "%s/cctkfs.img", g_boot_dir);
+    snprintf(bundled, sizeof(bundled), "%s/localbinrepo.img", g_boot_dir);
     if (ci_file_exists(bundled))
         return bundled;
     return NULL;
@@ -180,7 +180,7 @@ static int scan_source(char *kernel, char *img) {
                 continue;
             char k[256], i[256];
             snprintf(k, sizeof(k), MNT_SRC "/boot/kernel.bin");
-            snprintf(i, sizeof(i), MNT_SRC "/boot/cctkfs.img");
+            snprintf(i, sizeof(i), MNT_SRC "/boot/localbinrepo.img");
             if (ci_file_exists(k) && ci_file_exists(i)) {
                 snprintf(kernel, 256, "%s", k);
                 snprintf(img, 256, "%s", i);
@@ -233,7 +233,7 @@ static int locate_sources(char *kernel, char *img, int *media_mounted) {
     if (!ci_file_exists(kernel))
         return 0;
     if (!tui_input(ci_tui(), "Install media", "Media   [7/9]",
-                   "Path to cctkfs.img:", img, 256))
+                   "Path to localbinrepo.img:", img, 256))
         return 0;
     if (!ci_file_exists(img))
         return 0;
@@ -654,7 +654,7 @@ static int step_sources(struct wiz *w) {
         int sel = 0;
         if (tui_menu(ci_tui(), "Install media not found",
                      slabel(label, sizeof(label), 7, "Media"),
-                     "kernel.bin / cctkfs.img were not found.",
+                     "kernel.bin / localbinrepo.img were not found.",
                      "Up/Down move   Enter select   Left back",
                      items, 3, &sel) != 0)
             return W_QUIT;
@@ -835,7 +835,7 @@ static int step_summary(struct wiz *w) {
 
 static int step_deploy(struct wiz *w) {
     static const char *names[] = {
-        "Root filesystem (kernel + cctkfs.img)",
+        "Root filesystem (kernel + localbinrepo.img)",
         "Bootloader files",
         "Bootloader in the MBR",
         "Firmware archive",

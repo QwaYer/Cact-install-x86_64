@@ -51,7 +51,7 @@ cact-install — многолюдный C-проект (`src/*.c`: TUI, диск
   zstd — из `CactKernel-x86_64`).
 - **Заголовок/релокации** — `readelf -h`/`readelf -r build-meson/cact-install`.
 - **`stage`/`stage-media`** — копируют бинарь в `lr_sbin` и kernel+grub в
-  `lr_lib`; запускать после сборки ядра и до упаковки cctkfs.
+  `lr_lib`; запускать после сборки ядра и до упаковки localbinrepo.
 - **На железе/в QEMU** — за ядром, установщик стартует как
   `/usr/sbin/cact-install`.
 
