@@ -6,8 +6,7 @@
 #       -Dcactlib=../CactLibc-x86_64
 #   ninja -C build-meson             # build-meson/cact-install
 #   ninja -C build-meson stage        # copy into -Dlr_sbin (make install)
-#   ninja -C build-meson grub-bundle  # GRUB stage files into build-meson/grub
-#   ninja -C build-meson stage-media  # kernel + grub into -Dlr_lib (localbinrepo.img)
+#   ninja -C build-meson stage-media  # kernel.bin into -Dlr_lib (localbinrepo.img)
 #
 # A PIE linked against CactLibc with /lib/ld.so as PT_INTERP, exactly as the
 # Makefile built it.  stage-media must run after the kernel is built and BEFORE
@@ -139,24 +138,20 @@ run_target('stage',
   command: [bash, '-c', 'set -e; mkdir -p "$1"; cp -f "$2" "$1/cact-install"',
             'bash', lr_sbin, installer])
 
-# The Makefile's `grub-bundle`: GRUB stage files built from grubrepo.
-grub_payload = build_root / 'grub'
-
-run_target('grub-bundle',
-  command: [bash, grub_root / 'tools' / 'make-grub-payload.sh', grub_payload])
-
-# The Makefile's `stage-media`: kernel + grub payload into -Dlr_lib, so the next
-# localbinrepo.img pack carries them.  The image itself is deliberately NOT copied: the
+# The Makefile's `stage-media`: kernel.bin into -Dlr_lib, so the next
+# localbinrepo.img pack carries it.  The image itself is deliberately NOT copied: the
 # kernel serves the boot module as /dev/localbinrepo and the installer reads it there
 # (a copy inside the image would nest the image inside itself, and grow with
 # every rebuild).
+#
+# The GRUB stage files do NOT ride here any more: grubrepo packs them into its
+# own `grubrepo` boot module (served as /dev/grubrepo), and the installer
+# streams grub/ out of it.
 run_target('stage-media',
   command: [bash, '-c',
-            'set -e; lrlib="$1"; kern="$2"; grubdir="$3"; ' +
+            'set -e; lrlib="$1"; kern="$2"; ' +
             'test -f "$kern" || { echo "missing $kern — build the kernel first" >&2; exit 1; }; ' +
-            'test -f "$grubdir/i386-pc/core.img" || { echo "missing grub payload — run grub-bundle first" >&2; exit 1; }; ' +
             'mkdir -p "$lrlib/cact-install/boot"; ' +
             'cp -f "$kern" "$lrlib/cact-install/boot/kernel.bin"; ' +
-            'rm -rf "$lrlib/cact-install/grub"; ' +
-            'cp -r "$grubdir" "$lrlib/cact-install/grub"',
-            'bash', lr_lib, kern_build / 'kernel.bin', grub_payload])
+            'rm -rf "$lrlib/cact-install/grub"',
+            'bash', lr_lib, kern_build / 'kernel.bin'])

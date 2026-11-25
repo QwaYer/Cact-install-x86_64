@@ -49,6 +49,8 @@ static char g_grub_dir[256] = PAYLOAD_GRUB;
 
 #define FIRMREPO_WORK  "/tmp/cact-install-payload"
 #define FIRMREPO_TAR   "/tmp/cact-install-firmrepo.tar"
+#define GRUBREPO_WORK  "/tmp/cact-install-grub"
+#define GRUBREPO_TAR   "/tmp/cact-install-grubrepo.tar"
 
 /* Wizard position shown in the header. */
 #define CI_STEPS 10
@@ -68,7 +70,7 @@ static const char *firmrepo_candidates[] = {
 /* A candidate is only an archive if it carries bytes: an empty /dev/firmrepo
  * (a boot medium whose GRUB did not hand the module over) or a zero-length file
  * would otherwise be picked and streamed as an empty archive. */
-static int firmrepo_has_data(const char *path) {
+static int archive_has_data(const char *path) {
     struct stat st;
     if (stat(path, &st) != 0)
         return 0;
@@ -79,8 +81,25 @@ static int firmrepo_has_data(const char *path) {
 
 static const char *find_firmrepo(void) {
     for (int i = 0; firmrepo_candidates[i]; i++)
-        if (firmrepo_has_data(firmrepo_candidates[i]))
+        if (archive_has_data(firmrepo_candidates[i]))
             return firmrepo_candidates[i];
+    return NULL;
+}
+
+/* The installer's GRUB payload rides its own Multiboot2 module, served in place
+ * by the kernel as /dev/grubrepo: grub/ (i386-pc/, i386-efi/) is streamed out
+ * of it, so the payload no longer has to be baked into localbinrepo.img. */
+static const char *grubrepo_candidates[] = {
+    "/dev/grubrepo",           /* GRUB module, served in place by the kernel */
+    "/grubrepo.tar.zst",
+    "/boot/grubrepo.tar.zst",
+    NULL
+};
+
+static const char *find_grubrepo(void) {
+    for (int i = 0; grubrepo_candidates[i]; i++)
+        if (archive_has_data(grubrepo_candidates[i]))
+            return grubrepo_candidates[i];
     return NULL;
 }
 
@@ -112,6 +131,33 @@ static int payload_from_archive(void) {
              FIRMREPO_WORK "/usr/lib/cact-install/boot");
     snprintf(g_grub_dir, sizeof(g_grub_dir),
              FIRMREPO_WORK "/usr/lib/cact-install/grub");
+    return 1;
+}
+
+/* Stream grub/ out of the grubrepo module into a work dir and point g_grub_dir
+ * at it.  Returns 1 on success; 0 when the module (or zstd/tar) is absent, in
+ * which case the caller keeps whatever g_grub_dir already points at. */
+static int payload_grub_from_module(void) {
+    const char *arc = find_grubrepo();
+    if (!arc)
+        return 0;
+    if (!ci_file_exists(TOOL_ZSTD) || !ci_file_exists(TOOL_TAR))
+        return 0;
+    if (ci_mkdir_p(GRUBREPO_WORK) != 0)
+        return 0;
+
+    char *zargv[] = { (char *)"zstd", (char *)"-d", (char *)"-f",
+                      (char *)arc, (char *)"-o", (char *)GRUBREPO_TAR, NULL };
+    if (ci_exec(TOOL_ZSTD, zargv) != 0)
+        return 0;
+
+    char *targv[] = { (char *)"tar", (char *)"-xf", (char *)GRUBREPO_TAR,
+                      (char *)"-C", (char *)GRUBREPO_WORK,
+                      (char *)"grub", NULL };
+    if (ci_exec(TOOL_TAR, targv) != 0)
+        return 0;
+
+    snprintf(g_grub_dir, sizeof(g_grub_dir), GRUBREPO_WORK "/grub");
     return 1;
 }
 
@@ -261,6 +307,10 @@ static int locate_sources(char *kernel, char *img, int *media_mounted) {
      * would surface as a bogus "zstd: Data corruption detected" that has
      * nothing to do with the payload. */
     payload_from_archive();
+
+    /* The GRUB payload now arrives as its own module (/dev/grubrepo); prefer it
+     * over the bundled copy, so a medium built that way installs from it. */
+    payload_grub_from_module();
     if (check_payload()) {
         image = find_boot_image();
         snprintf(kernel, 256, "%s/kernel.bin", g_boot_dir);
