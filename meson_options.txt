@@ -13,5 +13,5 @@ option('kern_build', type: 'string', value: '../CactKernel-x86_64/build-meson',
 option('zstd_dir', type: 'string', value: '../CactKernel-x86_64/Cact/drivers/zstd',
   description: 'vendored zstd sources shared with the kernel tree; archive.c links them (the linker drops them while nothing calls it)')
 
-option('grub_repo', type: 'string', value: '../grubrepo',
+option('grub_repo', type: 'string', value: '../GrubRepo-for-Cact-x86',
   description: 'grubrepo: menu template + gen-cfg-header.py used to build the installer menu, relative or absolute')
